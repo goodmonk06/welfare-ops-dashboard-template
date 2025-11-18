@@ -16,55 +16,252 @@ datasource db {
 
 // 入所者モデル
 model Resident {
-  id          String   @id @default(cuid())
-  name        String
-  age         Int
-  roomNumber  String
-  admissionDate DateTime @default(now())
-  careLevel   Int      // 介護度 1-5
-  status      String   @default("active") // active, discharged
-  medicalInfo String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                  String    @id @default(cuid())
+  name                String
+  age                 Int
+  roomNumber          String
+  admissionDate       DateTime  @default(now())
+  dischargeDate       DateTime?
+  careLevel           Int // 介護度 1-5
+  status              String    @default("active") // active, discharged, hospitalized
+  medicalInfo         String?   @db.Text
+  emergencyContact    String?
+  emergencyPhone      String?
+  primaryCareWorkerId String?
+  primaryCareWorker   Staff?    @relation("PrimaryCareWorker", fields: [primaryCareWorkerId], references: [id])
+  tags                String[] // タグ配列
+  metadata            Json? // 追加メタデータ
+  archivedAt          DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relations
+  incidents    Incident[]
+  notes        Note[]
+  assessments  CareAssessment[]
+  medications  Medication[]
+  activityLogs ActivityLog[]    @relation("ResidentActivityLogs")
 }
 
 // 職員モデル
 model Staff {
-  id          String   @id @default(cuid())
-  name        String
-  role        String   // 看護師, 介護士, ケアマネージャーなど
-  email       String   @unique
-  phoneNumber String?
-  hireDate    DateTime
-  status      String   @default("active") // active, inactive
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  shifts      Shift[]
+  id              String    @id @default(cuid())
+  name            String
+  role            String // 看護師, 介護士, ケアマネージャーなど
+  department      String? // 部署
+  email           String    @unique
+  phoneNumber     String?
+  hireDate        DateTime
+  terminationDate DateTime?
+  status          String    @default("active") // active, inactive, on_leave
+  certifications  String[] // 資格リスト
+  tags            String[]
+  metadata        Json?
+  archivedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  shifts            Shift[]
+  reportedIncidents Incident[]
+  primaryResidents  Resident[]    @relation("PrimaryCareWorker")
+  notes             Note[]
+  tasks             Task[]
+  activityLogs      ActivityLog[] @relation("StaffActivityLogs")
 }
 
 // シフトモデル
 model Shift {
-  id        String   @id @default(cuid())
-  staffId   String
-  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  date      DateTime
-  startTime String   // "09:00"
-  endTime   String   // "17:00"
-  shiftType String   // 早番, 日勤, 遅番, 夜勤
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String    @id @default(cuid())
+  staffId    String
+  staff      Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date       DateTime
+  startTime  String // "09:00"
+  endTime    String // "17:00"
+  shiftType  String // 早番, 日勤, 遅番, 夜勤
+  status     String    @default("scheduled") // scheduled, confirmed, completed, cancelled
+  notes      String?
+  tags       String[]
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([date])
+  @@index([staffId, date])
 }
 
 // 事故・ヒヤリハットモデル
 model Incident {
-  id          String   @id @default(cuid())
-  title       String
-  description String   @db.Text
-  occurredAt  DateTime
-  severity    String   // low, medium, high
-  category    String   // 転倒, 誤薬, その他
-  status      String   @default("reported") // reported, investigating, resolved
-  reportedBy  String   // 報告者名
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  title              String
+  description        String    @db.Text
+  occurredAt         DateTime
+  severity           String // low, medium, high, critical
+  category           String // 転倒, 誤薬, その他
+  status             String    @default("reported") // reported, investigating, resolved, closed
+  reportedById       String?
+  reportedBy         Staff?    @relation(fields: [reportedById], references: [id])
+  residentId         String?
+  resident           Resident? @relation(fields: [residentId], references: [id])
+  location           String? // 発生場所
+  witnesses          String[] // 目撃者リスト
+  actionsTaken       String?   @db.Text
+  preventiveMeasures String?   @db.Text
+  tags               String[]
+  metadata           Json?
+  archivedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  documents Document[]
+
+  @@index([status])
+  @@index([severity])
+  @@index([occurredAt])
+}
+
+// 監査ログモデル
+model ActivityLog {
+  id         String    @id @default(cuid())
+  action     String // create, update, delete, view
+  entityType String // Resident, Staff, Incident, etc.
+  entityId   String
+  userId     String? // 将来の認証用
+  staffId    String?
+  staff      Staff?    @relation("StaffActivityLogs", fields: [staffId], references: [id])
+  residentId String?
+  resident   Resident? @relation("ResidentActivityLogs", fields: [residentId], references: [id])
+  changes    Json? // 変更内容の詳細
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([staffId])
+}
+
+// ドキュメントモデル
+model Document {
+  id           String    @id @default(cuid())
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int // bytes
+  url          String? // 将来のストレージURL
+  category     String // report, photo, medical, consent, etc.
+  incidentId   String?
+  incident     Incident? @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  uploadedBy   String? // 将来の認証用
+  tags         String[]
+  metadata     Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([category])
+  @@index([incidentId])
+}
+
+// タスク・リマインダーモデル
+model Task {
+  id           String    @id @default(cuid())
+  title        String
+  description  String?   @db.Text
+  dueDate      DateTime?
+  priority     String    @default("medium") // low, medium, high, urgent
+  status       String    @default("pending") // pending, in_progress, completed, cancelled
+  assignedToId String?
+  assignedTo   Staff?    @relation(fields: [assignedToId], references: [id])
+  category     String? // medication_review, assessment_due, follow_up, etc.
+  recurring    Boolean   @default(false)
+  recurrence   String? // daily, weekly, monthly, yearly
+  completedAt  DateTime?
+  tags         String[]
+  metadata     Json?
+  archivedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status])
+  @@index([dueDate])
+  @@index([assignedToId])
+}
+
+// 申し送り・ノートモデル
+model Note {
+  id         String    @id @default(cuid())
+  content    String    @db.Text
+  type       String    @default("general") // general, handover, important, observation
+  residentId String?
+  resident   Resident? @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     Staff?    @relation(fields: [authorId], references: [id])
+  shift      String? // 早番, 日勤, 遅番, 夜勤
+  isPinned   Boolean   @default(false)
+  tags       String[]
+  metadata   Json?
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([residentId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([isPinned])
+}
+
+// ケアアセスメントモデル
+model CareAssessment {
+  id               String    @id @default(cuid())
+  residentId       String
+  resident         Resident  @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  assessmentDate   DateTime  @default(now())
+  assessorId       String? // 将来の認証用
+  physicalHealth   Int? // 1-10 scale
+  mentalHealth     Int? // 1-10 scale
+  mobilityLevel    Int? // 1-5 scale
+  nutritionStatus  String?
+  sleepQuality     String?
+  socialEngagement String?
+  painLevel        Int? // 0-10 scale
+  findings         String?   @db.Text
+  recommendations  String?   @db.Text
+  nextReviewDate   DateTime?
+  status           String    @default("draft") // draft, finalized, archived
+  tags             String[]
+  metadata         Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([residentId])
+  @@index([assessmentDate])
+  @@index([status])
+}
+
+// 投薬管理モデル
+model Medication {
+  id           String    @id @default(cuid())
+  residentId   String
+  resident     Resident  @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  name         String
+  dosage       String
+  frequency    String // 1日3回, 朝食後, etc.
+  route        String? // 経口, 注射, etc.
+  startDate    DateTime  @default(now())
+  endDate      DateTime?
+  prescribedBy String? // 医師名
+  purpose      String? // 処方目的
+  sideEffects  String?   @db.Text
+  instructions String?   @db.Text
+  status       String    @default("active") // active, discontinued, completed
+  tags         String[]
+  metadata     Json?
+  archivedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([residentId])
+  @@index([status])
+  @@index([startDate])
 }
