@@ -1,0 +1,70 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 入所者モデル
+model Resident {
+  id          String   @id @default(cuid())
+  name        String
+  age         Int
+  roomNumber  String
+  admissionDate DateTime @default(now())
+  careLevel   Int      // 介護度 1-5
+  status      String   @default("active") // active, discharged
+  medicalInfo String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 職員モデル
+model Staff {
+  id          String   @id @default(cuid())
+  name        String
+  role        String   // 看護師, 介護士, ケアマネージャーなど
+  email       String   @unique
+  phoneNumber String?
+  hireDate    DateTime
+  status      String   @default("active") // active, inactive
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  shifts      Shift[]
+}
+
+// シフトモデル
+model Shift {
+  id        String   @id @default(cuid())
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date      DateTime
+  startTime String   // "09:00"
+  endTime   String   // "17:00"
+  shiftType String   // 早番, 日勤, 遅番, 夜勤
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 事故・ヒヤリハットモデル
+model Incident {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @db.Text
+  occurredAt  DateTime
+  severity    String   // low, medium, high
+  category    String   // 転倒, 誤薬, その他
+  status      String   @default("reported") // reported, investigating, resolved
+  reportedBy  String   // 報告者名
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
