@@ -32,6 +32,26 @@ export const residentRouter = router({
       });
     }),
 
+  update: publicProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().optional(),
+        age: z.number().optional(),
+        roomNumber: z.string().optional(),
+        careLevel: z.number().min(1).max(5).optional(),
+        medicalInfo: z.string().optional(),
+        status: z.enum(["active", "discharged"]).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      return await ctx.prisma.resident.update({
+        where: { id },
+        data,
+      });
+    }),
+
   delete: publicProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
